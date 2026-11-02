@@ -1,0 +1,1 @@
+{"virtualbox":{"/opt/aset-app":{"guestpath":"/opt/aset-app","hostpath":"C:/PROJECT/lab-aset-vm/app","disabled":false,"__vagrantfile":true},"/vagrant":{"guestpath":"/vagrant","hostpath":"C:/PROJECT/lab-aset-vm","disabled":false,"__vagrantfile":true}}}
