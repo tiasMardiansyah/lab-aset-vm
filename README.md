@@ -1,162 +1,157 @@
 # Lab Aset VM
 
-Environment lab fiktif untuk latihan enumeration/recon: satu web server Node.js
-(port 8080) + DNS server BIND9 dengan konfigurasi sengaja rentan (AXFR terbuka).
+Lab fiktif untuk latihan recon: web server Node.js + MySQL (port 8080) dan DNS
+BIND9 dengan AXFR terbuka.
 
-**Semua data di sini fiktif.** Jangan pakai konfigurasi ini di produksi.
+**Semua data fiktif. Konfigurasi ini sengaja tidak aman.**
 
-## Isi Project
+## Topologi
 
-| File | Fungsi |
-|------|--------|
-| `Vagrantfile` | Definisikan VM Ubuntu 22.04 (jammy64), 2 GB RAM, 2 CPU |
-| `provision.sh` | Install Node.js, BIND9, deploy app, buat service systemd & zone DNS |
-| `app/server.js` | Web server (endpoint: `/`, `/api/pegawai`, `/api/produk`, `/health`, `/robots.txt`, `/sitemap.xml`) |
-| `app/robots.txt` | Disallow `/api/pegawai` dan `/admin-backup/` (petunjuk buat recon) |
-| `app/sitemap.xml` | Bocorkan path `/admin-backup/` dan `/old-portal/` |
+| Mesin | Peran | Alamat |
+|-------|-------|--------|
+| Host Windows **atau** Linux | Jalankan VirtualBox + Vagrant, edit hosts | `192.168.56.1` (host-only) |
+| VM Ubuntu 22.04 | Server lab (web + MySQL + BIND9) | `192.168.56.10` |
+| Kali (opsional) | Mesin penyerang | host-only `192.168.56.0/24` |
 
-## Prasyarat
+Host boleh Windows atau Linux — langkah di bawah dipisah per OS.
 
-- [VirtualBox](https://www.virtualbox.org/wiki/Downloads) 7.x
-- [Vagrant](https://developer.hashicorp.com/vagrant/downloads) 2.4+
-- Host dengan minimal 4 GB RAM kosong
-- Windows/macOS/Linux (contoh di bawah pakai terminal Git Bash / bash)
+## 1. Prasyarat
 
-Cek instalasi:
+Aktifkan virtualisasi (VT-x/AMD-V) di BIOS sebelum mulai.
+
+### Windows
+
+```powershell
+winget install --id Oracle.VirtualBox -e --accept-source-agreements --accept-package-agreements
+winget install --id Hashicorp.Vagrant -e --accept-source-agreements --accept-package-agreements
+```
+
+Restart, buka PowerShell baru, lalu cek `vagrant --version` dan
+`vboxmanage --version`.
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update
+sudo apt install -y virtualbox vagrant
+```
+
+Untuk distro lain, pasang VirtualBox dan Vagrant dari repo resmi masing-masing.
+Perlu logout/login (atau reboot) agar user masuk grup `vboxusers`.
+
+Cek di kedua OS:
 
 ```bash
 vagrant --version
 vboxmanage --version
 ```
 
-## 1. Jalankan VM
+## 2. Setup per OS
+
+### Windows
+
+1. Klik kanan `install.bat` > **Run as administrator** — menambah entri
+   `*.lab.local` ke `%WINDIR%\System32\drivers\etc\hosts`.
+2. Nyalakan VM:
 
 ```bash
-cd lab-aset-vm
 vagrant up
 ```
 
-VM akan otomatis di-provision (install paket + start service). Proses pertama
-bisa 5–15 menit tergantung koneksi.
+### Linux
 
-> **Penting:** `Vagrantfile` memakai `public_network` (bridged). Vagrant akan
-> tanya interface mana yang mau dipakai. Pilih interface yang terhubung ke
-> jaringan lab/Kali kamu (misal `1) Ethernet`, `2) Wi-Fi`). Kalau ragu, lihat
-> nama adapter di host.
-
-**Alternatif tanpa bridge** (jaringan host-only, lebih aman untuk coursework):
-edit `Vagrantfile`, komentari baris `public_network`, aktifkan baris ini:
-
-```ruby
-config.vm.network "private_network", ip: "192.168.56.10"
-```
-
-lalu `vagrant reload --provision`. IP VM jadi tetap `192.168.56.10`.
-
-## 2. Cek Status & Ambil IP
+1. Tambah entri hosts (butuh sudo):
 
 ```bash
-vagrant status
-vagrant ssh -c "ip -4 addr show enp0s8"
+sudo bash install.sh
 ```
 
-IP ada di baris `inet` (misal `192.168.1.55`). Simpan sebagai `$VM_IP`:
+2. Nyalakan VM:
 
 ```bash
-VM_IP=192.168.1.55   # ganti dengan hasil di atas
+vagrant up
 ```
 
-## 3. Verifikasi Service
+Run pertama 5–15 menit (install Node, MySQL, BIND9, seed data).
+
+### Uninstall hosts
+
+- Windows: klik kanan `uninstall.bat` > **Run as administrator**.
+- Linux: `sudo bash uninstall.sh`.
+
+## 3. Verifikasi
 
 ```bash
-# Web server
-curl http://$VM_IP:8080/health
-curl http://$VM_IP:8080/api/pegawai
-
-# DNS
-dig aset.lab.local @$VM_IP
-dig www.lab.local @$VM_IP
-
-# Zone transfer (sengaja terbuka — ini target latihan)
-dig AXFR lab.local @$VM_IP
+curl http://192.168.56.10:8080/health
+dig aset.lab.local @192.168.56.10
+dig AXFR lab.local @192.168.56.10
 ```
 
-Output `AXFR` harus menampilkan semua record (`aset`, `www`, `api`, `mail`,
-`dev`, `backup`, `vpn`, `staging`) yang semuanya menunjuk ke IP VM yang sama.
+Browser: `http://aset.lab.local:8080` → redirect ke halaman login.
 
-## 4. Skenario Latihan (dari mesin Kali/attacker)
+## 4. Akun Lab
+
+| User | Password |
+|------|----------|
+| admin | admin123 |
+| tias | rahasia123 |
+
+## 5. Latihan Recon (dari Kali di network yang sama)
 
 ```bash
-# Recon web
-curl http://$VM_IP:8080/robots.txt        # bocorkan /api/pegawai & /admin-backup/
-curl http://$VM_IP:8080/sitemap.xml       # bocorkan /admin-backup/ & /old-portal/
-curl http://$VM_IP:8080/api/produk
-
-# Enumeration DNS
-nmap -sV -p 8080,53 $VM_IP
-dig AXFR lab.local @$VM_IP
-dnsrecon -d lab.local -n $VM_IP
+curl http://192.168.56.10:8080/robots.txt
+curl http://192.168.56.10:8080/sitemap.xml
+curl -i http://192.168.56.10:8080/api/produk   # redirect ke /login
+nmap -sV -p 8080,53,3306 192.168.56.10
+dig AXFR lab.local @192.168.56.10
 ```
 
-Subdomain hasil AXFR (`dev`, `backup`, `vpn`, `staging`) belum punya service
-terpisah — semuanya mengarah ke VM yang sama, jadi hasil recon tetap jujur
-terhadap satu target.
+Kali yang berjalan sebagai VM di host yang sama perlu adapter host-only
+tambahan di `192.168.56.0/24`.
 
-## 5. Melihat Log
-
-```bash
-vagrant ssh
-sudo journalctl -u aset-web -f          # log web server (akses tercatat)
-sudo journalctl -u named -f             # log BIND9
-```
-
-## 6. Perintah Sehari-hari
+## 6. Perintah
 
 | Perintah | Fungsi |
 |----------|--------|
-| `vagrant up` | Nyalakan (atau buat) VM |
-| `vagrant halt` | Matikan VM (state disimpan) |
-| `vagrant reload --provision` | Restart + jalankan ulang provision |
-| `vagrant provision` | Jalankan ulang `provision.sh` tanpa reboot |
+| `vagrant up` / `halt` | Nyalakan / matikan VM |
+| `vagrant provision` | Jalankan ulang `provision.sh` |
 | `vagrant ssh` | Masuk ke VM |
-| `vagrant destroy -f` | Hapus VM total (semua perubahan hilang) |
+| `vagrant destroy -f` | Hapus VM |
 
-Kalau ubah `app/server.js`, jalankan ulang provision supaya file ter-copy ke
-`/var/www/aset-lab` lalu restart service:
+Setelah mengubah file di `app/`:
 
 ```bash
 vagrant provision
 vagrant ssh -c "sudo systemctl restart aset-web"
 ```
 
-## Troubleshooting
+## 7. Log
 
-**`vagrant up` minta pilih interface berulang / salah interface**
-Jalankan `vagrant destroy -f` lalu `vagrant up` lagi dan pilih nomor interface
-yang benar. Nama interface host bisa dilihat dengan `ipconfig` (Windows) atau
-`ip a` (Linux/macOS).
+```bash
+vagrant ssh -c "sudo journalctl -u aset-web -f"
+vagrant ssh -c "sudo journalctl -u named -f"
+```
 
-**Provision gagal di bagian BIND / `TARGET_IP` kosong**
-Berarti interface `enp0s8` tidak ada. Cek `vagrant ssh -c "ip -4 addr"`. Kalau
-bridge gagal, pakai opsi `private_network` di langkah 1 (IP jadi `192.168.56.10`).
+## 8. Troubleshooting
 
-**`dig ... @$VM_IP` timeout**
-- Pastikan IP benar dan satu segmen jaringan dengan host.
-- Cek service: `vagrant ssh -c "sudo systemctl status named"`.
-- Firewall host (Windows Defender) bisa memblokir traffic masuk ke VM; izinkan
-  VirtualBox atau coba dari dalam VM dulu: `vagrant ssh -c "dig aset.lab.local @127.0.0.1"`.
+- **`dig` timeout dari host Windows** — izinkan `VBoxHeadless.exe` di Windows
+  Firewall.
+- **`dig` timeout dari host Linux** — cek `sudo ufw status`; izinkan traffic
+  dari `192.168.56.0/24` bila firewall aktif.
+- **`TARGET_IP` kosong** — cek `vagrant ssh -c "ip -4 addr"`, harus ada
+  `192.168.56.10` di `enp0s8`.
+- **VM lambat** — naikkan `vb.memory` di `Vagrantfile`, lalu `vagrant reload`.
 
-**Port 8080 sudah dipakai di host**
-Tidak masalah — port 8080 ada di dalam VM, bukan host. Konflik hanya terjadi
-kalau ada service lain di VM yang sama.
+## 9. Struktur
 
-**VM lambat / RAM kurang**
-Edit `Vagrantfile`: naikkan `vb.memory` (misal `"4096"`), lalu
-`vagrant reload`.
-
-## Peringatan
-
-Konfigurasi ini **sengaja tidak aman** (`allow-transfer { any; }`,
-`dnssec-validation no`, `recursion no`, data palsu di endpoint publik) untuk
-keperluan pembelajaran. Jangan jalankan di jaringan produksi atau jaringan
-publik tanpa isolasi.
+| File | Fungsi |
+|------|--------|
+| `Vagrantfile` | VM Ubuntu 22.04, IP `192.168.56.10` |
+| `provision.sh` | Install Node, MySQL, BIND9 + seed data |
+| `install.bat` / `install.ps1` | Tambah entri hosts Windows |
+| `uninstall.bat` / `uninstall.ps1` | Hapus entri hosts Windows |
+| `install.sh` / `uninstall.sh` | Tambah/hapus entri hosts Linux & macOS |
+| `app/server.js` | Routing + auth (session cookie) |
+| `app/db.js` | Koneksi MySQL + query |
+| `app/views.js` | HTML halaman login & portal |
+| `app/sitemap.xml`, `app/robots.txt` | Petunjuk path tersembunyi untuk recon |

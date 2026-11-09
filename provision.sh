@@ -3,19 +3,69 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 
 apt update
-apt install -y nodejs npm dnsutils bind9 bind9utils
+apt install -y nodejs npm mysql-server dnsutils bind9 bind9utils
+
+# --- MySQL setup ---
+systemctl enable --now mysql
+
+mysql <<'EOF'
+CREATE DATABASE IF NOT EXISTS aset_lab;
+CREATE USER IF NOT EXISTS 'aset'@'localhost' IDENTIFIED BY 'aset';
+GRANT SELECT ON aset_lab.* TO 'aset'@'localhost';
+
+CREATE TABLE IF NOT EXISTS aset_lab.users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password CHAR(32) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS aset_lab.pegawai (
+  id INT PRIMARY KEY,
+  nama VARCHAR(100) NOT NULL,
+  role VARCHAR(50) NOT NULL,
+  email VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS aset_lab.produk (
+  kode VARCHAR(20) PRIMARY KEY,
+  nama VARCHAR(100) NOT NULL,
+  stok INT NOT NULL,
+  harga BIGINT NOT NULL
+);
+
+INSERT IGNORE INTO aset_lab.users (username, password) VALUES
+  ('admin', MD5('admin123')),
+  ('tias',  MD5('rahasia123'));
+
+INSERT IGNORE INTO aset_lab.pegawai (id, nama, role, email) VALUES
+  (1, 'Tias',   'It',         'tias@contoh.test'),
+  (2, 'Dicky',  'Finance',    'dicky@contoh.test'),
+  (3, 'Roland', 'StafGudang', 'roland@contoh.test');
+
+INSERT IGNORE INTO aset_lab.produk (kode, nama, stok, harga) VALUES
+  ('P-001', 'Thinkpad P53',           12, 8500000),
+  ('P-002', 'Thinkpad T14 G1 Intel',  40, 5600000),
+  ('P-003', 'Thinkpad T14 G2 AMD',     7, 6500000);
+EOF
 
 # Deploy app files
 mkdir -p /var/www/aset-lab
 cp /opt/aset-app/server.js /var/www/aset-lab/server.js
+cp /opt/aset-app/db.js /var/www/aset-lab/db.js
+cp /opt/aset-app/views.js /var/www/aset-lab/views.js
 cp /opt/aset-app/robots.txt /var/www/aset-lab/robots.txt
 cp /opt/aset-app/sitemap.xml /var/www/aset-lab/sitemap.xml
+cp /opt/aset-app/package.json /var/www/aset-lab/package.json
+
+# Install app dependencies (mysql2)
+cd /var/www/aset-lab
+npm install --no-audit --no-fund
 
 # Run as a systemd service (auto-restart, boots with VM)
 cat > /etc/systemd/system/aset-web.service <<EOF
 [Unit]
 Description=Aset Lab Web Server
-After=network.target
+After=network.target mysql.service
 
 [Service]
 ExecStart=/usr/bin/node /var/www/aset-lab/server.js
@@ -84,6 +134,8 @@ options {
         directory "/var/cache/bind";
 
         listen-on { 127.0.0.1; ${TARGET_IP}; };
+
+        allow-query { any; };
 
         recursion no;
 

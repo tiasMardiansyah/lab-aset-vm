@@ -1,0 +1,7 @@
+{
+  "name": "aset-lab",
+  "private": true,
+  "dependencies": {
+    "mysql2": "^3.9.7"
+  }
+}

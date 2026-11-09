@@ -2,13 +2,8 @@ Vagrant.configure("2") do |config|
   config.vm.box = "ubuntu/jammy64"
   config.vm.hostname = "aset-lab"
 
-  # Choose ONE of the two network options below:
-
-  # Option A — Isolated lab network (safer, recommended for coursework)
-  # config.vm.network "private_network", ip: "192.168.56.10"
-
-  # Option B — Bridged to your real LAN (reachable from your own Kali box directly)
-  config.vm.network "public_network"
+  # Isolated lab network: VM selalu di 192.168.56.10
+  config.vm.network "private_network", ip: "192.168.56.10"
 
   config.vm.provider "virtualbox" do |vb|
     vb.memory = "2048"
